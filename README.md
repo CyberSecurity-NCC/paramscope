@@ -1,8 +1,8 @@
-# paramscope
+# ParamScope
 ParamScope: A Hybrid Analysis Tool for Detecting Cryptographic Misuse in Java Applications.
 
 - 🔍 **Precise Parameter Reconstruction**: Combines static slicing with dynamic IR simulation.
-- 🛡️ **Security-Centric Analysis**: Detects non-standard cryptographic practices (e.g., encoded keys).
+- 🛡️ **Security-Centric Analysis**: Detects non-standard cryptographic implementations (e.g., encoded parameter values).
 
 
 ### 🛠️ Building From Source
@@ -46,4 +46,24 @@ java -jar ParamScope-x.x-SNAPSHOT-jar-with-dependencies.jar -jar <path_to_jar_fi
 java -jar ParamScope-x.x-SNAPSHOT-jar-with-dependencies.jar -apk <path_to_apk_file> ( -androidJar | -aj ) <path_to_android.jar_file(without stub)>
 ```
 
-Note: When analyzing Android applications, the -androidJar/-aj option is required. You must specify a non-stub android.jar file that includes concrete implementations. It is recommended to use the `android-all-15-robolectric-12650502.jar` file located in the project directory. The jar can also be downloaded from ![Google Android All Library](https://mvnrepository.com/artifact/org.robolectric/android-all).
+Note: When analyzing Android applications, the -androidJar/-aj option is required. You must specify a non-stub android.jar file that includes concrete implementations. It is recommended to use the `android-all-15-robolectric-12650502.jar` file located in the project directory. The jar can also be downloaded from [Google Android All Library](https://mvnrepository.com/artifact/org.robolectric/android-all).
+
+### 💡 Explanatory Case
+
+ParamScope aims to precisely reconstruct Cryptographic API parameter in Java programs, focusing on:
+- Immediate values and direct assignments.
+- Values from method parameters.
+- Field-based assignments.
+- Expression-derived values.
+- Reassigned method parameters (for reference types)
+- Implicit (static) field assignments in method call
+
+ParamScope performs program slicing and reconstructs parameter values. The case below is a piece of complex, uncommon, and handcrafted code, but clearly demonstrates how ParamScope analyzes value propagation.
+
+**Program Slicing**
+
+![ProgramSlicing](./img/ProgramSlicing-ExplanatoryCase.png)
+
+**Value Reconstruction**
+
+![ValueReconstruction](./img/ValueReconstruction-ExplanatoryCase.png)

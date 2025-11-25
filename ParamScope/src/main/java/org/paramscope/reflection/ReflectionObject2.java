@@ -6,10 +6,15 @@ import sootup.core.types.Type;
 import java.lang.reflect.Array;
 
 public class ReflectionObject2 {
+    // 关注的值在sootUp中的名字
     private final String name;
+    // 关注的值在sootUp中的类型
     private final Type dataType;
+    // 值实例对象
     private Object instance;
+    // Java Class类
     private Class<?> objectClass;
+    // 对于数组类型，记录是否安全随机化（没用上，不用看）
     private ArrayState arrayState;
 
     public ReflectionObject2(Type type, String name) {

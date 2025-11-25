@@ -231,14 +231,21 @@ public class IntraResultTree {
     }
 
     public void resolveResults() {
+        // oneResult会记录IR树中的一条路径
         OneResult oneResult = new OneResult();
+        // 递归地将所有路径记录到results中
         resolveAllResults(root, oneResult, results);
+        // 对于每条路径进行模拟执行的分析
         for (OneResult result : results) {
+            // 记录执行中遇到的Exceptions，没用上
             runningExceptions = new ArrayList<>();
+            // 获取方法内分析结果的所有语句的迭代器
             ListIterator<IntraResult> iterator = result.getIntraResults().listIterator(result.getIntraResults().size());
+            // interProceduralObjects记录了所有跨方法分析的值的实例，包括目标参数值
             InterProceduralObjects interProceduralObjects = new InterProceduralObjects();
             while (iterator.hasPrevious()) {
                 IntraResult intraResult = iterator.previous();
+                // 如果是常量，则不用模拟执行了
                 if (!intraResult.getConstResults().isEmpty()) {
                     for (MethodParamRef methodParamRef : intraResult.getConstResults().keySet()) {
                         Constant constant = intraResult.getConstResults().get(methodParamRef);
@@ -248,8 +255,11 @@ public class IntraResultTree {
                     }
                     continue;
                 }
+                // （重要）intraResult记录了单个方法内分析的结果，对此方法内分析进行模拟执行分析
+                // 注意ReflectionObject2类，interProceduralObjects包含的是ReflectionObject2类
                 interProceduralObjects = resolveOneIntraResult(intraResult, interProceduralObjects);
             }
+            // ReflectionObject2 封装了模拟执行中的每一个值对象，结果记录在interProceduralObjects的paramObjects中
             Object[] oneResultObjects = new Object[interProceduralObjects.getParamObjects().size()];
             ReflectionObject2[] reflectionObjects = new ReflectionObject2[interProceduralObjects.getParamObjects().size()];
             int index = 0;
@@ -260,6 +270,7 @@ public class IntraResultTree {
             }
             for (int i = 0; i < oneResultObjects.length; i++) {
                 if (oneResultObjects[i] == null) {
+                    // 可能是null的几个原因，没用上
                     if (result.getIntraResults().get(result.getIntraResults().size() - 1).needsTracking()) {
                         nullReason.put(result, "No callers found. Actually not called");
                     }
@@ -270,6 +281,7 @@ public class IntraResultTree {
                         nullReason.put(result, "Not SecureRandomized Array(java.util.Random)");
                     }
                 }
+                // 数组类型随机性检查，不用看
                 if (reflectionObjects[i].getDataType() instanceof ArrayType && reflectionObjects[i].getArrayState() != ArrayState.SECURE_RANDOMIZED) {
                     arrayInfo.put(result, "Not SecureRandomized Array(Constant array/Credential in String/Insecure PRNG)");
                 }
@@ -278,9 +290,11 @@ public class IntraResultTree {
                 }
             }
             result.getRunningExceptions().addAll(runningExceptions);
+            // 结果值对象
             result.setReflectionObject(reflectionObjects);
             solvedResults.put(result, oneResultObjects);
 
+            // 如果是数组类型，进行重复生成测试（执行两次检查是否随机化）
             boolean twiceResolveForArrayRandomization = (APIList.getTrackArrayApiParamInfoList().contains(root.getIntraResult().getApiParamInfo())
                     || APIList.getTrackLongApiParamInfoList().contains(root.getIntraResult().getApiParamInfo()))
                     && oneResultObjects[0] != null;
@@ -334,6 +348,7 @@ public class IntraResultTree {
                     }
                 }
             } else {
+                // 对每条规则进行安全性检查
                 String security = checkSecurity(oneResultObjects, root.getIntraResult().getApiParamInfo());
                 resultSecurity.put(result, " (" + security + ")");
             }
@@ -356,6 +371,7 @@ public class IntraResultTree {
     }
 
     private InterProceduralObjects resolveOneIntraResult(IntraResult intraResult, InterProceduralObjects interProceduralObjects) {
+        // nextInterProceduralObjects初始化，记录了在这个方法内分析中的所有ReflectionObject
         InterProceduralObjects nextInterProceduralObjects = new InterProceduralObjects();
         for (JStaticFieldRef staticFieldRef : intraResult.getStaticFieldRefTrackers().keySet()) {
             StaticFieldRefTracker staticFieldRefTracker = intraResult.getStaticFieldRefTrackers().get(staticFieldRef);
@@ -363,12 +379,15 @@ public class IntraResultTree {
                 interProceduralObjects.getStaticFieldObjects().put(staticFieldRef, staticFieldRefTracker.getTrackedReflectionObject());
             }
         }
+        // FocusedValueObjects就的是方法内分析过程中所有的值对象
         FocusedValueObjects valueObjects = new FocusedValueObjects(intraResult.getCallSite().getCaller(), interProceduralObjects);
 
+        // 从intraResult中获取方法内分析的所有切片语句
         ListIterator<Stmt> resultStmtIterator = intraResult.getResultStmts().listIterator(intraResult.getResultStmts().size());
         while (resultStmtIterator.hasPrevious()) {
             Stmt valueFlowStmt = resultStmtIterator.previous();
 
+            // 如果语句包含方法调用，检查其是都是关注的调用点，并检查追踪的参数和是否需要追踪方法调用者实例（this）
             if (valueFlowStmt.containsInvokeExpr()
                     && valueFlowStmt.getInvokeExpr().getMethodSignature().equals(intraResult.getCallSite().getCallee())
                     && valueFlowStmt.getPositionInfo().getStmtPosition().equals(intraResult.getCallSite().getPos().getStmtPosition())) {
@@ -380,9 +399,11 @@ public class IntraResultTree {
                 }
             }
 
+            // 一条语句中的被定义的值
             FocusedValues defValues = intraResult.getStmtDefValues().get(valueFlowStmt);
             if (defValues != null) {
 
+                // 如果只包含方法调用语句，则反射执行
                 if (!defValues.onlyContainsStaticFieldRef()) {
                     try {
                         stmtReflection(valueFlowStmt, valueObjects);
@@ -396,12 +417,14 @@ public class IntraResultTree {
                     }
                 }
 
+                // （不用看）只包含一个被定义值，且为数组类型，检查是否被安全随机化
                 if (defValues.allValues().size() == 1 && defValues.allValues().get(0).getType() instanceof ArrayType && intraResult.getSecureRandomizedArrays().contains(defValues.allValues().get(0))) {
                     if (valueObjects.contains(defValues.allValues().get(0))) {
                         valueObjects.getReflectionObject(defValues.allValues().get(0)).setArrayState(ArrayState.SECURE_RANDOMIZED);
                     }
                 }
 
+                // （不用看）只包含一个被定义值，且为数组类型，检查是否安全随机化
                 if (defValues.allValues().size() == 1 && defValues.allValues().get(0).getType() instanceof ArrayType) {
                     for (Value value : valueFlowStmt.getUses().toList()) {
                         if (value.getType() instanceof ArrayType && intraResult.getSecureRandomizedArrays().contains(value)) {
@@ -413,6 +436,7 @@ public class IntraResultTree {
                         }
                     }
                 }
+                // （不用看）只包含一个被定义值，且为数组类型，检查是否不安全随机化
                 if (defValues.allValues().size() == 1 && defValues.allValues().get(0).getType() instanceof ArrayType && valueFlowStmt.containsInvokeExpr()) {
                     if (valueFlowStmt.getInvokeExpr().getMethodSignature().getDeclClassType().getFullyQualifiedName().equals("java.util.Random")
                             && valueFlowStmt.getInvokeExpr().getMethodSignature().getName().equals("nextBytes")
@@ -424,6 +448,7 @@ public class IntraResultTree {
                     }
                 }
 
+                // 语句包含方法调用语句且含被定义的静态字段，则启发式解静态字段的值（很多逻辑和stmtReflection是重复的，内部不用看了）
                 if (valueFlowStmt.containsInvokeExpr() && !defValues.isEmptyStaticField()) {
                     HashMap<Value, List<ValueAssign>> staticFieldAssigns = intraResult.getStmtFieldAssigns().get(valueFlowStmt);
                     solveStmtFieldAssigns(staticFieldAssigns, valueObjects, valueFlowStmt.getInvokeExpr().getMethodSignature());
@@ -580,6 +605,7 @@ public class IntraResultTree {
 
         ReflectionObject2 defObject;
 
+        // 如果包含方法调用，解析方法调用的所有参数的数据类型和对应实例，放到paramTypes和paramInstances中
         if (valueFlowStmt.containsInvokeExpr()) {
             AbstractInvokeExpr invokeExpr = valueFlowStmt.getInvokeExpr();
             paramTypes = new Class[invokeExpr.getArgCount()];
@@ -603,6 +629,7 @@ public class IntraResultTree {
 
         }
 
+        // 方法调用语句是实例调用语句，则通过实例对象反射调用
         if (valueFlowStmt instanceof AbstractDefinitionStmt defStmt && defStmt.containsInvokeExpr() && defStmt.getInvokeExpr() instanceof AbstractInstanceInvokeExpr invokeExpr) {
             defObject = valueObjects.getReflectionObject(defStmt.getDef().get());
             try {
@@ -624,6 +651,7 @@ public class IntraResultTree {
                 }
             }
         }
+        // 方法调用语句是静态方法调用，则直接反射调用
         if (valueFlowStmt instanceof AbstractDefinitionStmt defStmt && defStmt.containsInvokeExpr() && defStmt.getInvokeExpr() instanceof JStaticInvokeExpr invokeExpr) {
             defObject = valueObjects.getReflectionObject(defStmt.getDef().get());
             ArrayList<Class<?>> exceptionTypes = new ArrayList<>();
@@ -638,6 +666,7 @@ public class IntraResultTree {
                 runningExceptions.add("Caught Exception \"" + e.getMessage() + "\" at " + valueFlowStmt);
             }
         }
+        // 其他方法调用语句的情况（如InterfaceInvoke涉及及继承关系的方法调用），其中包含了一些数组的特殊处理
         if (valueFlowStmt instanceof AbstractDefinitionStmt defStmt && !defStmt.containsInvokeExpr()) {
             defObject = valueObjects.getReflectionObject(defStmt.getDef().get());
             if (defStmt.getRightOp() instanceof Constant constant) {
@@ -699,9 +728,12 @@ public class IntraResultTree {
                 }
             }
         }
+        // 方法调用语句，但不是赋值语句（例如secureRandom.nextBytes(keyBytes)是方法调用语句，但不是赋值语句， str = stringBuilder.toString()是赋值语句，且包含方法调用的赋值语句）
         if (valueFlowStmt instanceof JInvokeStmt) {
             AbstractInvokeExpr invokeExpr = valueFlowStmt.getInvokeExpr();
+            // 实例调用语句
             if (invokeExpr instanceof AbstractInstanceInvokeExpr abstractInstanceInvokeExpr) {
+                // specialInvoke语句，一般是构造方法的调用语句
                 if (abstractInstanceInvokeExpr instanceof JSpecialInvokeExpr specialInvokeExpr && specialInvokeExpr.getMethodSignature().getName().equals("<init>")) {
                     try {
                         Constructor<?> constructor = baseType.getDeclaredConstructor(paramTypes);
@@ -712,6 +744,7 @@ public class IntraResultTree {
                         runningExceptions.add("Caught Exception \"" + e.getMessage() + "\" at " + valueFlowStmt);
                     }
                 } else {
+                    // 一般的实例调用语句
                     try {
                         Method invokeMethod = getMethod(baseType, abstractInstanceInvokeExpr.getMethodSignature().getName(), paramTypes);
                         invokeMethod.setAccessible(true);
@@ -730,6 +763,7 @@ public class IntraResultTree {
                     }
                 }
             } else {
+                // 静态方法调用
                 try {
                     ClassLoader classLoader = AnalysisEnv.ClassLoader();
                     Class<?> invokeClass = classLoader.loadClass(invokeExpr.getMethodSignature().getDeclClassType().getFullyQualifiedName());
@@ -744,6 +778,7 @@ public class IntraResultTree {
 
     }
 
+    // 启发式分析静态字段
     private Object tryGetStaticField(FieldSignature fieldSignature) {
         Class<?> baseClass = GetClassFromType2.get(fieldSignature.getDeclClassType());
         try {
@@ -757,6 +792,7 @@ public class IntraResultTree {
         return null;
     }
 
+    // 启发式分析动态字段
     private Object tryGetInstanceField(JInstanceFieldRef instanceFieldRef) {
         Object resObject = null;
         FieldSignature fieldSignature = instanceFieldRef.getFieldSignature();
@@ -826,6 +862,7 @@ public class IntraResultTree {
         return resObject;
     }
 
+    // 根据Class对象，方法名，参数类型列表获取方法
     private Method getMethod(Class<?> baseClass, String methodName, Class<?>[] paramClasses) {
         Set<Method> methods = new HashSet<>();
         methods.addAll(Arrays.asList(baseClass.getMethods()));
@@ -848,6 +885,7 @@ public class IntraResultTree {
         return null;
     }
 
+    // 检查两次执行结果的数据是否一样来检查随机性（重复生成测试）
     private boolean checkArrayRandomization(Object arr1, Object arr2) {
         boolean randomized = false;
         assert arr1.getClass().getComponentType().equals(arr2.getClass().getComponentType());

@@ -6,8 +6,11 @@ import sootup.core.jimple.common.ref.JStaticFieldRef;
 import java.util.HashMap;
 
 public class InterProceduralObjects {
+    // 跨方法参数位置对应的值对象
     HashMap<Integer, ReflectionObject2> paramObjects;
+    // 跨方法静态变量对应的值对象
     HashMap<JStaticFieldRef, ReflectionObject2> staticFieldObjects;
+    // 方法调用者实例的值对象
     ReflectionObject2 thisObject;
 
     public InterProceduralObjects() {

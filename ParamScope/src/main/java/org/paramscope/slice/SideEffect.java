@@ -31,6 +31,7 @@ import java.util.ListIterator;
 
 public class SideEffect {
 
+    // 一些对于数组分析的情况逻辑不是很清晰，可以跳过
     public static FocusedValues defUseAnalysis(
             Stmt stmt,
             FocusedValues trackingValues,
@@ -39,6 +40,7 @@ public class SideEffect {
     ) throws ResolveException {
         FocusedValues defValues = new FocusedValues(new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), stmtMethodMS);
 
+        // 对于数组安全性分析的情况，逻辑不是很清晰，可以跳过
         checkRandomizedArrays(stmt, trackingValues, trackedValues);
 
         if (stmt instanceof AbstractDefinitionStmt defStmt && trackingValues.contains(defStmt.getLeftOp())) {

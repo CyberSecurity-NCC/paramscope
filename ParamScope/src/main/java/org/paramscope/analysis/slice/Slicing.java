@@ -45,8 +45,10 @@ public class Slicing {
         ResultJson insecureResultJson = new ResultJson();
         int ID = 1;
 
+        // 遍历API列表的所有目标API
         for (APIParamInfo apiParamInfo : APIList.getAllApiParamInfoList()) {
             if (apiParamInfo.getMethodSignature() != null) {
+                // 从 applicationMethodAndapiMethodMap （该表记录了目标API和所有app方法之间的调用关系）中查询每个目标API的调用点
                 MethodSignature calleeMS = apiParamInfo.getMethodSignature();
                 MethodInfo calleeMI = CallRelation.getApplicationMethodAndapiMethodMap().get(calleeMS);
 
@@ -56,13 +58,16 @@ public class Slicing {
                     System.out.println("    [caller]:" + callSite.getCaller().toString());
                     System.out.println("    [callee]:" + callSite.getCallee().toString());
                     try {
+                        // 一个需要特殊记录的API，不用关注
                         currentCaller = callSite.getCaller();
                         if (APIList.getKeyPairGeneratorGetInstance_Algo_String().contains(apiParamInfo)) {
                             keyPairGenerator_algo.put(callSite.getCaller(), "");
                         }
 
+                        // 对单个调用点建立IR树（从调用点到定义）
                         IntraResultNode treeNode = buildIntraResultTree2(apiParamInfo, callSite, new ArrayList<>(), false);
                         IntraResultTree resultTree = new IntraResultTree(treeNode);
+                        // IR模拟解析结果
                         resultTree.resolveResults();
 
                         StringBuilder result_subDir = new StringBuilder();
@@ -128,16 +133,22 @@ public class Slicing {
 
     public static IntraResultNode buildIntraResultTree2(APIParamInfo apiParamInfo, CallSite callSite, List<JStaticFieldRef> trackingStaticFields, boolean trackBaseOfTheMethod) {
         JavaSootMethod callerSM = AnalysisEnv.view().getMethod(callSite.getCaller()).get();
-        IntraSlicing intraSlicing = new IntraSlicing(callerSM.getBody().getStmtGraph(), callSite, apiParamInfo, trackingStaticFields, trackBaseOfTheMethod);
+        // 方法内程序切片，切片结果主要记录在其中的intraResult属性中
+        IntraSlicing intraSlicing = new IntraSlicing(callerSM, callerSM.getBody().getStmtGraph(), callSite, apiParamInfo, trackingStaticFields, trackBaseOfTheMethod);
         IntraResult intraResult = intraSlicing.getIntraResult2();
 
         IntraResultNode treeNode = new IntraResultNode(intraResult);
+        // intraResult.needsTracking() 判断是否需要进行跨方法分析
         if (intraResult.needsTracking()) {
             MethodInfo callerMI = CallRelation.getApplicationMethodAndapiMethodMap().get(callSite.getCaller());
+            // 如果该方法是main方法，则不存在调用者了
             if (!callerMI.getIsMain()) {
+                // 对该方法的每个调用者都会进行跨方法分析
                 for (CallSite callerOfCallerCallSite : callerMI.getCallSites()) {
+                    // 关注的目标API为被调用者方法
                     APIParamInfo apiParamInfoCaller = new APIParamInfo(callerOfCallerCallSite.getCallee().getDeclClassType().getClassName(), callerOfCallerCallSite.getCallee().getSubSignature().getName(), intraResult.getTracingParamRefs().stream().map(value -> value.parameterRef().getIndex()).toList());
                     apiParamInfoCaller.setMethodSignature(callerOfCallerCallSite.getCallee());
+                    // 递归，构成树状IR图
                     IntraResultNode intraResultNode = buildIntraResultTree2(apiParamInfoCaller, callerOfCallerCallSite, intraResult.getTracingStaticFieldRefs(), intraResult.getThisOfCallerNeedsTracking());
                     treeNode.getCallerResults().put(callerOfCallerCallSite, intraResultNode);
                 }

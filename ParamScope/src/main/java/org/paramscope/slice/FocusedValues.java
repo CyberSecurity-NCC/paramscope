@@ -19,11 +19,15 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 
+// 封装类“关注的值”
 public class FocusedValues {
-
+    // 关注的 “临时变量”
     private final List<MethodJavaLocal> focusedLocals;
+    // 关注的 “静态字段“
     private final List<JStaticFieldRef> focusedStaticFields;
+    // 关注的 ”动态字段“
     private final List<JInstanceFieldRef> focusedInstanceFields;
+    // 关注的 ”数组引用”
     private final List<JArrayRef> focusedArrayRefs;
 
     // INFO: StaticField can be defined when init or defined anywhere else, use a tracker to track it.

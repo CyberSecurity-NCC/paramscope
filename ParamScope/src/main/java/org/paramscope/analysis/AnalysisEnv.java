@@ -12,6 +12,7 @@ import sootup.java.bytecode.inputlocation.JavaClassPathAnalysisInputLocation;
 import sootup.java.bytecode.inputlocation.JrtFileSystemAnalysisInputLocation;
 import sootup.java.core.views.JavaView;
 
+import java.io.File;
 import java.net.*;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -99,7 +100,7 @@ public class AnalysisEnv {
 
         try {
             startTime = System.nanoTime();
-            inputLocations.add(new ApkAnalysisInputLocation(Paths.get(apkURI), SourceType.Application));
+            inputLocations.add(new ApkAnalysisInputLocation(Paths.get(apkPath), SourceType.Application));
 
             JavaView applicationView = new JavaView(inputLocations);
             setApplicationClassNames(applicationView.getClasses().stream().map(SootClass::getName).toList());
@@ -128,6 +129,7 @@ public class AnalysisEnv {
         }
 
         startTime = System.nanoTime();
+        ApkResourcesPack.repackResourcesToJar(apkPath);
         jarURLs = getAndroidJarURLs(apkPath);
         classLoader = new URLClassLoader(jarURLs);
         Slicing.runSlicing2();
@@ -149,8 +151,12 @@ public class AnalysisEnv {
         String androidJarPathStr2 = androidJarPath2.toString();
 
         try {
-            return new URL[]{new URL("file://" + dex2JarPathStr), new URL("file://" + androidJarPathStr2)};
-        } catch (Exception e) {
+            File dex2File = new File(dex2JarPathStr);
+            File androidJarFile = androidJarPath2.toFile();
+            URL dex2Url = dex2File.toURI().toURL();
+            URL androidJarUrl = androidJarFile.toURI().toURL();
+            return new URL[]{dex2Url, androidJarUrl};
+        } catch (MalformedURLException e) {
             throw new RuntimeException(e);
         }
     }

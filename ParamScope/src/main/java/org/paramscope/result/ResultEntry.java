@@ -62,6 +62,27 @@ public class ResultEntry {
         }
     }
 
+    /**
+     * Build a ResultEntry with pre-aggregated instances (e.g. path-sensitive slicing aggregation).
+     */
+    public ResultEntry(APIParamInfo apiInfo, CallSite callSite, String filePath, InstanceInfo[] paramInstances, int entryID) {
+        this.entryID = entryID;
+        this.apiInfo = apiInfo;
+        this.callsite = callSite;
+        this.paramNums = apiInfo.getParamPosList().size();
+        this.filePath = filePath;
+
+        this.paramDataTypes = new Class[this.paramNums];
+        this.paramDataTypesStr = new String[this.paramNums];
+        for (int i = 0; i < paramNums; i++) {
+            this.paramDataTypes[i] = GetClassFromType2.get(apiInfo.getMethodSignature().getParameterTypes().get(apiInfo.getParamPosList().get(i)));
+            this.paramDataTypesStr[i] = this.paramDataTypes[i].getName();
+        }
+
+        this.paramInstances = (paramInstances == null) ? new InstanceInfo[0] : paramInstances;
+        this.instanceNums = this.paramInstances.length;
+    }
+
     private boolean containsArray() {
         for (Class<?> c : paramDataTypes) {
             if (c.isArray()) {

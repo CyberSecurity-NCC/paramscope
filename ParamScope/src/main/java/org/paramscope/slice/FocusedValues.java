@@ -145,14 +145,31 @@ public class FocusedValues {
     }
 
     public void add(JInstanceFieldRef instanceFieldRef) {
-        // TODO: When def is JInstanceFieldRef, check getBase(). Consider if we need to track Base or JInstanceFieldRef
+        // Track the field itself, and conservatively track its base as well (to enable slicing across setters).
         focusedInstanceFields.add(instanceFieldRef);
+        Value base = instanceFieldRef.getBase();
+        if (base instanceof JavaLocal local) {
+            add(local);
+        }
     }
 
     public void add(JArrayRef arrayRef) {
-        // TODO: When def is JArrayRef, check getBase(). Consider if we need to track Base or ArrayRef
-        // And check if ArrayRef.getBase() is ArrayRef recursively
+        // Track the array element ref and conservatively track its base (array object) and index locals.
         focusedArrayRefs.add(arrayRef);
+        Value base = arrayRef.getBase();
+        if (base instanceof JavaLocal local) {
+            add(local);
+        } else if (base instanceof JInstanceFieldRef ifr) {
+            add(ifr);
+        } else if (base instanceof JStaticFieldRef sfr) {
+            add(sfr);
+        } else if (base instanceof JArrayRef ar) {
+            add(ar);
+        }
+        Value idx = arrayRef.getIndex();
+        if (idx instanceof JavaLocal idxLocal) {
+            add(idxLocal);
+        }
     }
 
     public void add(LValue lvalue) {
@@ -207,6 +224,10 @@ public class FocusedValues {
                 }
             }
         } else if (stmt instanceof AbstractDefinitionStmt definitionStmt) {
+            // If defining an array element, the base/index are uses that should be tracked to reach allocations.
+            if (definitionStmt.getLeftOp() instanceof JArrayRef leftArrayRef) {
+                add(leftArrayRef);
+            }
             if (definitionStmt.getRightOp() instanceof JFieldRef fieldRef) {
                 add(fieldRef);
             }

@@ -75,6 +75,10 @@ public class ModifyBaseVirtualInvokeMethodSet {
 
         MODIFY_BASE_VIRTUAL_INVOKE_METHOD_SET.add(new ModifyBaseVirtualInvokeMethod("java.util.TreeMap", "pollFirstEntry"));
         MODIFY_BASE_VIRTUAL_INVOKE_METHOD_SET.add(new ModifyBaseVirtualInvokeMethod("java.util.TreeMap", "pollLastEntry"));
+
+        // Project motivation examples (treat setters as base-modifying to keep them in slices for replay)
+        MODIFY_BASE_VIRTUAL_INVOKE_METHOD_SET.add(new ModifyBaseVirtualInvokeMethod("motivationExample2$Config", "setA"));
+        MODIFY_BASE_VIRTUAL_INVOKE_METHOD_SET.add(new ModifyBaseVirtualInvokeMethod("motivationExample2$Config", "setF"));
     }
 
     public static Set<ModifyBaseVirtualInvokeMethod> getSet() {

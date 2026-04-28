@@ -13,6 +13,7 @@ import sootup.core.jimple.common.expr.JInterfaceInvokeExpr;
 import sootup.core.jimple.common.expr.JSpecialInvokeExpr;
 import sootup.core.jimple.common.expr.JVirtualInvokeExpr;
 import sootup.core.jimple.common.ref.JArrayRef;
+import sootup.core.jimple.common.ref.JInstanceFieldRef;
 import sootup.core.jimple.common.ref.JParameterRef;
 import sootup.core.jimple.common.ref.JStaticFieldRef;
 import sootup.core.jimple.common.stmt.*;
@@ -47,6 +48,16 @@ public class SideEffect {
             LValue defValue = defStmt.getLeftOp();
             defValues.add(defValue);
 
+            trackedValues.computeIfAbsent(defValue, k -> new ArrayList<>()).add(new ValueAssign(defStmt.getRightOp(), AssignWay.ASSIGN));
+        }
+
+        // Instance-field write: if the base object is being tracked, keep the field write for replay.
+        if (stmt instanceof AbstractDefinitionStmt defStmt
+                && defStmt.getLeftOp() instanceof JInstanceFieldRef ifr
+                && ifr.getBase() instanceof JavaLocal base
+                && trackingValues.contains(base)) {
+            LValue defValue = defStmt.getLeftOp();
+            defValues.add(defValue);
             trackedValues.computeIfAbsent(defValue, k -> new ArrayList<>()).add(new ValueAssign(defStmt.getRightOp(), AssignWay.ASSIGN));
         }
 

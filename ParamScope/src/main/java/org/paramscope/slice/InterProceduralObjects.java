@@ -12,6 +12,8 @@ public class InterProceduralObjects {
     HashMap<JStaticFieldRef, ReflectionObject2> staticFieldObjects;
     // 方法调用者实例的值对象
     ReflectionObject2 thisObject;
+    // Valueflow-only: a concrete object for an arbitrary local target at a stmt.
+    ReflectionObject2 localTargetObject;
 
     public InterProceduralObjects() {
         paramObjects = new HashMap<>();
@@ -22,6 +24,7 @@ public class InterProceduralObjects {
         this.paramObjects = new HashMap<>(interProceduralObjects.paramObjects);
         this.staticFieldObjects = new HashMap<>(interProceduralObjects.staticFieldObjects);
         this.thisObject = interProceduralObjects.thisObject;
+        this.localTargetObject = interProceduralObjects.localTargetObject;
     }
 
     public HashMap<Integer, ReflectionObject2> getParamObjects() {
@@ -38,6 +41,14 @@ public class InterProceduralObjects {
 
     public void setThisObject(ReflectionObject2 thisObject) {
         this.thisObject = thisObject;
+    }
+
+    public ReflectionObject2 getLocalTargetObject() {
+        return localTargetObject;
+    }
+
+    public void setLocalTargetObject(ReflectionObject2 localTargetObject) {
+        this.localTargetObject = localTargetObject;
     }
 
 

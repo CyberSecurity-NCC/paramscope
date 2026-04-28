@@ -38,7 +38,8 @@ public class AnalysisEnv {
         fileName = path.getFileName().toString();
 
         try {
-            jarURLs = new URL[]{new URL("file://" + jarPath)};
+            // Use a proper file URI (Windows-safe) for URLClassLoader reflection.
+            jarURLs = new URL[]{path.toUri().toURL()};
         } catch (MalformedURLException e) {
             System.out.println("AnalysisEnv.class: wrong jarURL");
             throw new RuntimeException(e);
@@ -71,6 +72,51 @@ public class AnalysisEnv {
         endTime = System.nanoTime();
         duration = endTime - startTime;
         System.out.println("Time taken for CryptoSolver analysis, solving and visualization: " + duration / 1000000 + " ms.");
+    }
+
+    /**
+     * Initialize analysis environment for a plain jar without running any slicing/solving pipeline.
+     * This is intended for standalone modules (e.g. valueflow) that reuse {@link AnalysisEnv#view()}
+     * and {@link AnalysisEnv#ClassLoader()} but want full control over what analyses to execute.
+     */
+    public static void initJarOnly(String jarPath, boolean buildCallRelation) {
+
+        Path path = Paths.get(jarPath);
+        if (!path.isAbsolute()) {
+            path = path.toAbsolutePath();
+            jarPath = path.toString();
+        }
+        fileName = path.getFileName().toString();
+
+        try {
+            jarURLs = new URL[]{path.toUri().toURL()};
+        } catch (MalformedURLException e) {
+            System.out.println("AnalysisEnv.class: wrong jarURL");
+            throw new RuntimeException(e);
+        }
+
+        long startTime = System.nanoTime();
+        List<AnalysisInputLocation> inputLocations = new ArrayList<>();
+        inputLocations.add(new JavaClassPathAnalysisInputLocation(jarPath));
+        JavaView applicationView = new JavaView(inputLocations);
+        setApplicationClassNames(applicationView.getClasses().stream().map(SootClass::getName).toList());
+        inputLocations.add(new JrtFileSystemAnalysisInputLocation());
+
+        setView(new JavaView(inputLocations, new LRUCacheProvider(500)));
+        classLoader = new URLClassLoader(jarURLs);
+
+        long endTime = System.nanoTime();
+        long duration = endTime - startTime;
+        System.out.println("Time taken for sootUp analysis: " + duration / 1000000 + " ms.");
+
+        if (buildCallRelation) {
+            startTime = System.nanoTime();
+            MainMethods.setMainMethods(applicationClassNames);
+            CallRelation.buildCallRelation(applicationClassNames);
+            endTime = System.nanoTime();
+            duration = endTime - startTime;
+            System.out.println("Time taken for building methods and call relations: " + duration / 1000000 + " ms, Total classes: " + applicationClassNames.size());
+        }
     }
 
     public static void analysisApk(String apkPath) {

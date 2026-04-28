@@ -6,6 +6,7 @@ import org.paramscope.api.APIParamInfo;
 import org.paramscope.call.CallSite;
 import org.paramscope.data.APIList;
 import org.paramscope.reflection.*;
+import org.paramscope.set.util.DebugNdjsonLogger;
 import org.paramscope.rule.*;
 import sootup.core.jimple.basic.Immediate;
 import sootup.core.jimple.basic.Local;
@@ -35,7 +36,6 @@ import java.lang.reflect.*;
 import java.math.BigInteger;
 import java.security.NoSuchAlgorithmException;
 import java.util.*;
-import java.util.stream.Collectors;
 
 public class IntraResultTree {
     IntraResultNode root;
@@ -453,6 +453,32 @@ public class IntraResultTree {
                     HashMap<Value, List<ValueAssign>> staticFieldAssigns = intraResult.getStmtFieldAssigns().get(valueFlowStmt);
                     solveStmtFieldAssigns(staticFieldAssigns, valueObjects, valueFlowStmt.getInvokeExpr().getMethodSignature());
                 }
+            } else {
+                // Even if this stmt doesn't define any tracked value, it may still mutate tracked objects/fields.
+                // Example: cfg.setA(...) / cfg.setF(...) should be replayed to populate later field reads.
+                if (valueFlowStmt.containsInvokeExpr()) {
+                    try {
+                        stmtReflection(valueFlowStmt, valueObjects);
+                    } catch (NullPointerException e) {
+                        // ignore
+                    } catch (ExceptionInInitializerError | NoClassDefFoundError | ClassCastException |
+                             IllegalArgumentException e) {
+                        // ignore
+                    } catch (UnsatisfiedLinkError e) {
+                        // ignore
+                    }
+                }
+                // #region agent log
+                else if (valueFlowStmt instanceof AbstractDefinitionStmt defStmt
+                        && (defStmt.getRightOp() instanceof JNewArrayExpr
+                        || defStmt.getDef().isPresent() && defStmt.getDef().get() instanceof JArrayRef)) {
+                    DebugNdjsonLogger.log("repro1", "H_array_stmts_skipped", "IntraResultTree:resolveOneIntraResult",
+                            "skipped non-invoke array-related defStmt due to defValues==null",
+                            Map.of("stmt", String.valueOf(valueFlowStmt),
+                                    "def", defStmt.getDef().isPresent() ? String.valueOf(defStmt.getDef().get()) : "<none>",
+                                    "rightOp", String.valueOf(defStmt.getRightOp())));
+                }
+                // #endregion
             }
         }
 
@@ -627,6 +653,28 @@ public class IntraResultTree {
                 }
             }
 
+            // #region agent log
+            if (invokeExpr instanceof JStaticInvokeExpr sie
+                    && sie.getMethodSignature().getDeclClassType().getFullyQualifiedName().equals("motivationExample2")
+                    && sie.getMethodSignature().getName().equals("decodeAscii")) {
+                DebugNdjsonLogger.log("repro1", "H_decodeAscii_arg_null", "IntraResultTree:stmtReflection",
+                        "decodeAscii args prepared",
+                        Map.of("stmt", String.valueOf(valueFlowStmt),
+                                "arg0", (paramInstances != null && paramInstances.length > 0) ? String.valueOf(paramInstances[0]) : "<none>"));
+            }
+            if (invokeExpr instanceof AbstractInstanceInvokeExpr iie
+                    && iie.getMethodSignature().getDeclClassType().getFullyQualifiedName().equals("motivationExample2$Config")
+                    && (iie.getMethodSignature().getName().equals("setA") || iie.getMethodSignature().getName().equals("setF"))) {
+                Object p0 = (paramInstances != null && paramInstances.length > 0) ? paramInstances[0] : null;
+                String p0Desc = (p0 == null) ? "null" : (p0.getClass().getName() + ":" + String.valueOf(p0));
+                DebugNdjsonLogger.log("repro1", "H_setA_param_array_null", "IntraResultTree:stmtReflection",
+                        "Config setter args prepared",
+                        Map.of("stmt", String.valueOf(valueFlowStmt),
+                                "method", String.valueOf(iie.getMethodSignature()),
+                                "param0", p0Desc));
+            }
+            // #endregion
+
         }
 
         // 方法调用语句是实例调用语句，则通过实例对象反射调用
@@ -651,6 +699,27 @@ public class IntraResultTree {
                 }
             }
         }
+        // Handle Java 9+ invokedynamic StringConcatFactory patterns (minimal).
+        if (valueFlowStmt instanceof AbstractDefinitionStmt defStmt
+                && defStmt.containsInvokeExpr()
+                && defStmt.getInvokeExpr() instanceof JDynamicInvokeExpr dyn) {
+            defObject = valueObjects.getReflectionObject(defStmt.getDef().get());
+            try {
+                String tpl = extractConcatTemplate(String.valueOf(dyn));
+                if (tpl != null) {
+                    if ((tpl.equals("\u0001\u0001") || tpl.equals("")) && paramInstances != null && paramInstances.length == 2) {
+                        defObject.setInstance(String.valueOf(paramInstances[0]) + String.valueOf(paramInstances[1]));
+                        return;
+                    }
+                    if ((tpl.equals("\u00011") || tpl.equals("1")) && paramInstances != null && paramInstances.length == 1) {
+                        defObject.setInstance(String.valueOf(paramInstances[0]) + "1");
+                        return;
+                    }
+                }
+            } catch (Exception e) {
+                runningExceptions.add("Caught Exception \"" + e.getMessage() + "\" at " + valueFlowStmt);
+            }
+        }
         // 方法调用语句是静态方法调用，则直接反射调用
         if (valueFlowStmt instanceof AbstractDefinitionStmt defStmt && defStmt.containsInvokeExpr() && defStmt.getInvokeExpr() instanceof JStaticInvokeExpr invokeExpr) {
             defObject = valueObjects.getReflectionObject(defStmt.getDef().get());
@@ -669,6 +738,15 @@ public class IntraResultTree {
         // 其他方法调用语句的情况（如InterfaceInvoke涉及及继承关系的方法调用），其中包含了一些数组的特殊处理
         if (valueFlowStmt instanceof AbstractDefinitionStmt defStmt && !defStmt.containsInvokeExpr()) {
             defObject = valueObjects.getReflectionObject(defStmt.getDef().get());
+            // #region agent log
+            if (defStmt.getDef().isPresent() && defStmt.getDef().get() instanceof JInstanceFieldRef ifr) {
+                DebugNdjsonLogger.log("repro1", "H_instance_field_write_missing", "IntraResultTree:stmtReflection",
+                        "def is instance field (write?)",
+                        Map.of("stmt", String.valueOf(valueFlowStmt),
+                                "field", String.valueOf(ifr.getFieldSignature()),
+                                "rightOp", String.valueOf(defStmt.getRightOp())));
+            }
+            // #endregion
             if (defStmt.getRightOp() instanceof Constant constant) {
                 try {
                     if (defStmt.getDef().get() instanceof JArrayRef arrayRef && defStmt.getRightOp() instanceof IntConstant) {
@@ -687,6 +765,23 @@ public class IntraResultTree {
                 Class<?> arrayClass = GetClassFromType2.get(newArrayExpr.getBaseType());
                 int arrayLength = ((IntConstant) newArrayExpr.getSize()).getValue();
                 defObject.setInstance(Array.newInstance(arrayClass, arrayLength));
+            } else if (defStmt.getRightOp() instanceof JArrayRef arrayRef) {
+                // Read array element from base array instance.
+                try {
+                    Object baseArr = valueObjects.getReflectionObject(arrayRef.getBase()).getInstance();
+                    int idx;
+                    if (arrayRef.getIndex() instanceof IntConstant ic) {
+                        idx = ic.getValue();
+                    } else {
+                        Object idxObj = valueObjects.getReflectionObject(arrayRef.getIndex()).getInstance();
+                        idx = (idxObj instanceof Number n) ? n.intValue() : Integer.parseInt(String.valueOf(idxObj));
+                    }
+                    if (baseArr != null) {
+                        defObject.setInstance(Array.get(baseArr, idx));
+                    }
+                } catch (Exception e) {
+                    runningExceptions.add("Caught Exception \"" + e.getMessage() + "\" at " + valueFlowStmt);
+                }
             } else if (defStmt.getRightOp() instanceof JNewArrayExpr newArrayExpr) {
                 Class<?> arrayClass = GetClassFromType2.get(newArrayExpr.getBaseType());
                 int arrayLength = (int) valueObjects.getReflectionObject(newArrayExpr.getSize()).getInstance();
@@ -725,6 +820,15 @@ public class IntraResultTree {
                     }
                 } catch (NullPointerException e) {
                     runningExceptions.add("Caught Exception \"" + e.getMessage() + "\" at " + valueFlowStmt);
+                    // #region agent log
+                    if (defStmt.getDef().isPresent() && defStmt.getDef().get() instanceof JArrayRef ar) {
+                        DebugNdjsonLogger.log("repro1", "H_array_base_null", "IntraResultTree:stmtReflection",
+                                "array assignment NPE (likely base/index missing)",
+                                Map.of("stmt", String.valueOf(valueFlowStmt),
+                                        "arrayRef", String.valueOf(ar),
+                                        "rightOp", String.valueOf(defStmt.getRightOp())));
+                    }
+                    // #endregion
                 }
             }
         }
@@ -772,10 +876,26 @@ public class IntraResultTree {
                     method.invoke(null, paramInstances);
                 } catch (ClassNotFoundException | IllegalAccessException | InvocationTargetException e) {
                     runningExceptions.add("Caught Exception \"" + e.getMessage() + "\" at " + valueFlowStmt);
+                    // #region agent log
+                    DebugNdjsonLogger.log("repro1", "H_decodeAscii_invoke_exception", "IntraResultTree:stmtReflection",
+                            "static invoke exception",
+                            Map.of("stmt", String.valueOf(valueFlowStmt),
+                                    "invoke", String.valueOf(invokeExpr),
+                                    "exc", String.valueOf(e.getMessage())));
+                    // #endregion
                 }
             }
         }
 
+    }
+
+    private static String extractConcatTemplate(String dynToString) {
+        int lastOpen = dynToString.lastIndexOf("(\"");
+        int lastClose = dynToString.lastIndexOf("\")");
+        if (lastOpen >= 0 && lastClose > lastOpen + 2) {
+            return dynToString.substring(lastOpen + 2, lastClose);
+        }
+        return null;
     }
 
     // 启发式分析静态字段

@@ -2,14 +2,14 @@
 ParamScope: A Hybrid Analysis Tool for Detecting Cryptographic Misuse in Java Applications.
 
 - 🔍 **Precise Parameter Reconstruction**: Combines static slicing with dynamic IR simulation.
-- 🛡️ **Security-Centric Analysis**: Detects non-standard cryptographic implementations (e.g., encoded parameter values).
+- 🛡�**Security-Centric Analysis**: Detects non-standard cryptographic implementations (e.g., encoded parameter values).
 
 
-### 🛠️ Building From Source
+### 🛠�Building From Source
 
 Ensure following dependencies are installed:
-- Java 17
-- Maven 3.9.6
+- Java 17+
+- Maven 3.9.6+
 
 The executable JAR file `'ParamScope-x.x-SNAPSHOT-jar-with-dependencies.jar'` has been placed in the project directory.
 

@@ -10,8 +10,8 @@ ParamScope: A Hybrid Analysis Tool for Detecting Cryptographic Misuse in Java Ap
 
 Ensure following dependencies are installed:
 
-- Java 17 +
-- Maven 3.9.6 +
+- Java 17+
+- Maven 3.9.6+
 
 The executable JAR file `'ParamScope-x.x-SNAPSHOT-jar-with-dependencies.jar'` has been placed in the project directory.
 
